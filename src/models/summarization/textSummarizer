@@ -1,0 +1,34 @@
+/**
+ * Local Text Summarizer
+ * ---------------------
+ * Simple extractive summarizer.
+ *
+ * This does not use an external LLM.
+ */
+
+class TextSummarizer {
+  constructor(options = {}) {
+    this.maxSentences = options.maxSentences || 3;
+  }
+
+  splitSentences(text) {
+    return String(text || "")
+      .split(/(?<=[.!?])\s+/)
+      .map(sentence => sentence.trim())
+      .filter(Boolean);
+  }
+
+  summarize(text) {
+    const sentences = this.splitSentences(text);
+
+    if (sentences.length <= this.maxSentences) {
+      return sentences.join(" ");
+    }
+
+    const selected = sentences.slice(0, this.maxSentences);
+
+    return selected.join(" ");
+  }
+}
+
+module.exports = TextSummarizer;
