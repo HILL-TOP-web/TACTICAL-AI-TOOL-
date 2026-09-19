@@ -1,0 +1,41 @@
+{
+  "name": "tactical-ai",
+  "version": "1.0.0",
+  "description": "Tactical AI — a controlled fictional training, simulation, decision-support, terrain, logistics, weather, routing, knowledge, and conversational AI platform.",
+  "main": "src/server.js",
+  "type": "commonjs",
+
+  "engines": {
+    "node": "=24.21.0"
+  },
+
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js"
+  },
+
+  "keywords": [
+    "tactical-ai",
+    "simulation",
+    "training",
+    "decision-support",
+    "terrain-analysis",
+    "logistics",
+    "weather",
+    "routing",
+    "knowledge-base",
+    "conversation-ai"
+  ],
+
+  "author": "Daniel David Oluwayimika",
+  "license": "MIT",
+
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0"
+  }
+}
