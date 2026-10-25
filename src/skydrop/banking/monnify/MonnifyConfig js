@@ -1,0 +1,177 @@
+"use strict";
+
+const DEFAULT_PRODUCTION_URL = "https://api.monnify.com";
+const DEFAULT_SANDBOX_URL = "https://sandbox.monnify.com";
+
+function requiredEnv(name, env = process.env) {
+  const value = env[name];
+
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`MISSING_ENV_VARIABLE_${name}`);
+  }
+
+  return value.trim();
+}
+
+function getMonnifyConfig(env = process.env) {
+  const environment = (
+    env.MONNIFY_ENVIRONMENT || "sandbox"
+  ).trim().toLowerCase();
+
+  if (!["sandbox", "production"].includes(environment)) {
+    throw new Error("INVALID_MONNIFY_ENVIRONMENT");
+  }
+
+  const defaultUrl =
+    environment === "production"
+      ? DEFAULT_PRODUCTION_URL
+      : DEFAULT_SANDBOX_URL;
+
+  const baseUrl = (
+    env.MONNIFY_BASE_URL || defaultUrl
+  ).trim().replace(/\/+$/, "");
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    throw new Error("INVALID_MONNIFY_BASE_URL");
+  }
+
+  if (
+    parsedUrl.protocol !== "https:" ||
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.search ||
+    parsedUrl.hash
+  ) {
+    throw new Error("INVALID_MONNIFY_BASE_URL");
+  }
+
+  if (
+    environment === "production" &&
+    baseUrl !== DEFAULT_PRODUCTION_URL
+  ) {
+    throw new Error("UNAPPROVED_MONNIFY_PRODUCTION_URL");
+  }
+
+  if (
+    environment === "sandbox" &&
+    baseUrl !== DEFAULT_SANDBOX_URL
+  ) {
+    throw new Error("UNAPPROVED_MONNIFY_SANDBOX_URL");
+  }
+
+  const apiKey = requiredEnv("MONNIFY_API_KEY", env);
+  const secretKey = requiredEnv("MONNIFY_SECRET_KEY", env);
+  const contractCode = requiredEnv("MONNIFY_CONTRACT_CODE", env);
+
+  const enabled =
+    String(env.MONNIFY_ENABLED || "false").toLowerCase() === "true";
+
+  const disbursementPath =
+    env.MONNIFY_DISBURSEMENT_PATH ||
+    "/api/v2/disbursements/single";
+
+  if (
+    !disbursementPath.startsWith("/") ||
+    disbursementPath.startsWith("//") ||
+    disbursementPath.includes("://")
+  ) {
+    throw new Error("INVALID_MONNIFY_DISBURSEMENT_PATH");
+  }
+
+  return Object.freeze({
+    environment,
+    baseUrl,
+    apiKey,
+    secretKey,
+    contractCode,
+    enabled,
+    disbursementPath,
+    requestTimeoutMs: 15000
+  });
+}
+
+function assertMonnifyEnabled(config = getMonnifyConfig()) {
+  if (!config.enabled) {
+    throw new Error("MONNIFY_DISABLED");
+  }
+}
+
+async function checkMonnifyConnectivity({
+  fetchImpl = globalThis.fetch,
+  env = process.env
+} = {}) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("FETCH_API_UNAVAILABLE");
+  }
+
+  const config = getMonnifyConfig(env);
+
+  assertMonnifyEnabled(config);
+
+  const controller = new AbortController();
+
+  const timeout = setTimeout(
+    () => controller.abort(),
+    config.requestTimeoutMs
+  );
+
+  try {
+    const response = await fetchImpl(
+      `${config.baseUrl}/api/v1/auth/login`,
+      {
+        method: "POST",
+        headers: {
+          Authorization:
+            "Basic " +
+            Buffer.from(
+              `${config.apiKey}:${config.secretKey}`
+            ).toString("base64"),
+
+          Accept: "application/json"
+        },
+
+        signal: controller.signal
+      }
+    );
+
+    const body = await response.json().catch(() => ({}));
+
+    if (
+      !response.ok ||
+      body.requestSuccessful !== true ||
+      !body.responseBody?.accessToken
+    ) {
+      throw new Error("MONNIFY_AUTHENTICATION_FAILED");
+    }
+
+    return {
+      connected: true,
+      environment: config.environment,
+      authenticated: true
+    };
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("MONNIFY_CONNECTION_TIMEOUT");
+    }
+
+    if (
+      error.message === "MONNIFY_AUTHENTICATION_FAILED"
+    ) {
+      throw error;
+    }
+
+    throw new Error("MONNIFY_CONNECTION_FAILED");
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+module.exports = {
+  getMonnifyConfig,
+  assertMonnifyEnabled,
+  checkMonnifyConnectivity
+};
