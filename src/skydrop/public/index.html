@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <meta
+        name="api-base-url"
+        content=""
+    >
+
+    <meta
+        name="theme-color"
+        content="#080808"
+    >
+
+    <title>SkyDrop | Digital Asset Dashboard</title>
+
+    <style>
+        :root {
+            --background: #080808;
+            --panel: #141414;
+            --panel-border: #292929;
+            --gold: #d4af37;
+            --gold-light: #f4d675;
+            --text: #f4f4f4;
+            --muted: #a6a6a6;
+            --danger: #ff7272;
+            --success: #72df9b;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--background);
+            color: var(--text);
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.5;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            padding: 20px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        .brand {
+            color: var(--gold);
+            font-size: 25px;
+            font-weight: 800;
+            letter-spacing: 2px;
+        }
+
+        .tagline {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        main {
+            width: min(1100px, 100%);
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1,
+        h2,
+        h3 {
+            margin-top: 0;
+        }
+
+        h2 {
+            color: var(--gold-light);
+            font-size: 19px;
+        }
+
+        .section {
+            margin-bottom: 24px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(
+                auto-fit,
+                minmax(min(100%, 220px), 1fr)
+            );
+            gap: 16px;
+        }
+
+        .card {
+            min-width: 0;
+            padding: 20px;
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+        }
+
+        .balance-label {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .balance {
+            margin: 8px 0 0;
+            color: var(--gold);
+            font-size: clamp(20px, 4vw, 28px);
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+
+        form {
+            display: grid;
+            gap: 12px;
+        }
+
+        label {
+            display: grid;
+            gap: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        input,
+        select,
+        button {
+            width: 100%;
+            min-height: 44px;
+            padding: 11px 12px;
+            border-radius: 8px;
+            font: inherit;
+        }
+
+        input,
+        select {
+            border: 1px solid #383838;
+            background: #090909;
+            color: var(--text);
+        }
+
+        button {
+            border: 0;
+            background: var(--gold);
+            color: #111;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: var(--gold-light);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .secondary-button {
+            background: #242424;
+            color: var(--gold-light);
+            border: 1px solid #3a3a3a;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .button-row button {
+            width: auto;
+        }
+
+        .status {
+            min-height: 24px;
+            color: var(--muted);
+            overflow-wrap: anywhere;
+        }
+
+        .status[data-state="error"] {
+            color: var(--danger);
+        }
+
+        .status[data-state="success"] {
+            color: var(--success);
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            white-space: nowrap;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        th {
+            color: var(--gold-light);
+            font-size: 12px;
+        }
+
+        td {
+            font-size: 13px;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        li {
+            margin-bottom: 8px;
+            overflow-wrap: anywhere;
+        }
+
+        footer {
+            padding: 24px;
+            text-align: center;
+            color: var(--muted);
+            border-top: 1px solid var(--panel-border);
+            font-size: 12px;
+        }
+
+        .notice {
+            padding: 12px;
+            border: 1px solid #51451e;
+            border-radius: 8px;
+            color: var(--gold-light);
+            background: #18150b;
+            font-size: 13px;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div>
+            <div class="brand">SKYDROP</div>
+
+            <div class="tagline">
+                MINE · EARN · TRADE · TRANSFER · GROW
+            </div>
+        </div>
+
+        <button
+            id="refresh-dashboard"
+            type="button"
+            style="width: auto;"
+        >
+            Refresh Dashboard
+        </button>
+    </header>
+
+    <main>
+        <section class="section">
+            <h1>Dashboard</h1>
+
+            <p id="dashboard-status" class="status" role="status">
+                Waiting for server...
+            </p>
+
+            <div class="grid">
+                <article class="card">
+                    <div class="balance-label">
+                        SKD Balance
+                    </div>
+
+                    <p
+                        class="balance"
+                        id="dashboard-skd-balance"
+                    >
+                        —
+                    </p>
+                </article>
+
+                <article class="card">
+                    <div class="balance-label">
+                        USD Balance
+                    </div>
+
+                    <p
+                        class="balance"
+                        id="dashboard-usd-balance"
+                    >
+                        —
+                    </p>
+                </article>
+
+                <article class="card">
+                    <div class="balance-label">
+                        NGN Balance
+                    </div>
+
+                    <p
+                        class="balance"
+                        id="dashboard-ngn-balance"
+                    >
+                        —
+                    </p>
+                </article>
+            </div>
+
+            <div class="card" style="margin-top: 16px;">
+                <h2>Recent Transactions</h2>
+
+                <ul id="dashboard-recent-transactions">
+                    <li>Loading transactions...</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="card">
+                <h2>My Wallet</h2>
+
+                <p
+                    id="wallet-status"
+                    class="status"
+                    role="status"
+                >
+                    Wallet has not been loaded.
+                </p>
+
+                <div class="grid">
+                    <div>
+                        <div class="balance-label">
+                            SKD
+                        </div>
+
+                        <p
+                            id="wallet-skd-balance"
+                            class="balance"
+                        >
+                            —
+                        </p>
+                    </div>
+
+                    <div>
+                        <div class="balance-label">
+                            USD
+                        </div>
+
+                        <p
+                            id="wallet-usd-balance"
+                            class="balance"
+                        >
+                            —
+                        </p>
+                    </div>
+
+                    <div>
+                        <div class="balance-label">
+                            NGN
+                        </div>
+
+                        <p
+                            id="wallet-ngn-balance"
+                            class="balance"
+                        >
+                            —
+                        </p>
+                    </div>
+                </div>
+
+                <button
+                    id="refresh-wallet"
+                    type="button"
+                    class="secondary-button"
+                >
+                    Refresh Wallet
+                </button>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="card">
+                <h2>Transaction History</h2>
+
+                <p
+                    id="transactions-status"
+                    class="status"
+                    role="status"
+                >
+                    Transaction history has not been loaded.
+                </p>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th>Reference</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="transactions-table-body">
+                            <tr>
+                                <td colspan="5">
+                                    No transaction data loaded.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="button-row">
+                    <button
+                        id="transactions-previous"
+                        class="secondary-button"
+                        type="button"
+                        disabled
+                    >
+                        Previous
+                    </button>
+
+                    <button
+                        id="transactions-next"
+                        class="secondary-button"
+                        type="button"
+                        disabled
+                    >
+                        Next
+                    </button>
+
+                    <button
+                        id="refresh-transactions"
+                        type="button"
+                    >
+                        Refresh
+                    </button>
+                </div>
+
+                <p id="transactions-page" class="status">
+                    Page 1 of 1
+                </p>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="card">
+                <h2>Transfer</h2>
+
+                <p class="notice">
+                    Confirm the recipient and asset before submitting.
+                    Transfer availability is determined by the backend.
+                </p>
+
+                <form id="transfer-form">
+                    <label for="transfer-recipient">
+                        Recipient account or wallet identifier
+
+                        <input
+                            id="transfer-recipient"
+                            name="recipient"
+                            type="text"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label for="transfer-asset">
+                        Asset
+
+                        <select
+                            id="transfer-asset"
+                            name="asset"
+                            required
+                        >
+                            <option value="SKD">SKD</option>
+                            <option value="USD">USD</option>
+                            <option value="NGN">NGN</option>
+                            <option value="USDT">USDT</option>
+                        </select>
+                    </label>
+
+                    <label for="transfer-amount">
+                        Amount
+
+                        <input
+                            id="transfer-amount"
+                            name="amount"
+                            type="number"
+                            min="0.00000001"
+                            step="any"
+                            inputmode="decimal"
+                            required
+                        >
+                    </label>
+
+                    <button
+                        id="submit-transfer"
+                        type="submit"
+                    >
+                        Submit Transfer Request
+                    </button>
+                </form>
+
+                <p
+                    id="transfer-status"
+                    class="status"
+                    role="status"
+                    aria-live="polite"
+                ></p>
+
+                <h3>Recent Transfers</h3>
+
+                <ul id="transfers-list">
+                    <li>Transfers have not been loaded.</li>
+                </ul>
+
+                <button
+                    id="refresh-transfers"
+                    class="secondary-button"
+                    type="button"
+                >
+                    Refresh Transfers
+                </button>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="card">
+                <h2>Bank Withdrawal</h2>
+
+                <p class="notice">
+                    Minimum withdrawal: ₦100. The backend must verify
+                    the bank account and determine the actual transfer status.
+                </p>
+
+                <form id="withdrawal-form">
+                    <label for="withdrawal-account-number">
+                        Recipient bank account number
+
+                        <input
+                            id="withdrawal-account-number"
+                            name="accountNumber"
+                            type="text"
+                            inputmode="numeric"
+                            pattern="[0-9]{10}"
+                            minlength="10"
+                            maxlength="10"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label for="withdrawal-bank-code">
+                        Recipient bank code
+
+                        <input
+                            id="withdrawal-bank-code"
+                            name="bankCode"
+                            type="text"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label for="withdrawal-account-name">
+                        Verified account name
+
+                        <input
+                            id="withdrawal-account-name"
+                            name="accountName"
+                            type="text"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label for="withdrawal-amount">
+                        Withdrawal amount (NGN)
+
+                        <input
+                            id="withdrawal-amount"
+                            name="amount"
+                            type="number"
+                            min="100"
+                            step="0.01"
+                            inputmode="decimal"
+                            required
+                        >
+                    </label>
+
+                    <button
+                        id="submit-withdrawal"
+                        type="submit"
+                    >
+                        Request Withdrawal
+                    </button>
+                </form>
+
+                <p
+                    id="withdrawal-status"
+                    class="status"
+                    role="status"
+                    aria-live="polite"
+                ></p>
+
+                <h3>Withdrawal History</h3>
+
+                <ul id="withdrawals-list">
+                    <li>Withdrawals have not been loaded.</li>
+                </ul>
+
+                <button
+                    id="refresh-withdrawals"
+                    class="secondary-button"
+                    type="button"
+                >
+                    Refresh Withdrawals
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        SkyDrop — Digital Asset and Rewards Platform
+    </footer>
+
+    <!-- Load the shared API client first. -->
+    <script src="/js/api.js" defer></script>
+
+    <!-- Load feature modules after the shared client. -->
+    <script src="/js/wallet.js" defer></script>
+    <script src="/js/transactions.js" defer></script>
+    <script src="/js/transfers.js" defer></script>
+    <script src="/js/withdrawals.js" defer></script>
+    <script src="/js/dashboard.js" defer></script>
+</body>
+  </html>
