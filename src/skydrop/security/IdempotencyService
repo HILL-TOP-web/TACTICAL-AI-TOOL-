@@ -1,0 +1,318 @@
+'use strict';
+
+const crypto = require('node:crypto');
+const mongoose = require('mongoose');
+
+const IdempotencyRecordSchema = new mongoose.Schema(
+    {
+        userId: {
+            type: String,
+            required: true
+        },
+
+        operation: {
+            type: String,
+            required: true
+        },
+
+        key: {
+            type: String,
+            required: true
+        },
+
+        requestHash: {
+            type: String,
+            required: true
+        },
+
+        status: {
+            type: String,
+            enum: [
+                'processing',
+                'completed',
+                'failed'
+            ],
+            required: true
+        },
+
+        resourceType: {
+            type: String,
+            default: null
+        },
+
+        resourceId: {
+            type: String,
+            default: null
+        },
+
+        response: {
+            type: mongoose.Schema.Types.Mixed,
+            default: null
+        },
+
+        createdAt: {
+            type: Date,
+            default: Date.now,
+            required: true
+        },
+
+        updatedAt: {
+            type: Date,
+            default: Date.now,
+            required: true
+        }
+    },
+    {
+        collection: 'skydrop_idempotency_records',
+        versionKey: false
+    }
+);
+
+IdempotencyRecordSchema.index(
+    {
+        userId: 1,
+        operation: 1,
+        key: 1
+    },
+    {
+        unique: true
+    }
+);
+
+const IdempotencyRecord =
+    mongoose.models.SkyDropIdempotencyRecord ||
+    mongoose.model(
+        'SkyDropIdempotencyRecord',
+        IdempotencyRecordSchema
+    );
+
+class IdempotencyError extends Error {
+    constructor(message, code = 'IDEMPOTENCY_ERROR') {
+        super(message);
+
+        this.name = 'IdempotencyError';
+        this.code = code;
+        this.statusCode = 409;
+    }
+}
+
+function canonicalize(value) {
+    if (Array.isArray(value)) {
+        return value.map(canonicalize);
+    }
+
+    if (value && typeof value === 'object') {
+        const result = {};
+
+        for (const key of Object.keys(value).sort()) {
+            result[key] = canonicalize(value[key]);
+        }
+
+        return result;
+    }
+
+    return value;
+}
+
+function hashRequest(payload) {
+    return crypto
+        .createHash('sha256')
+        .update(JSON.stringify(canonicalize(payload)))
+        .digest('hex');
+}
+
+class IdempotencyService {
+    constructor({ model = IdempotencyRecord } = {}) {
+        this.model = model;
+    }
+
+    async begin({
+        userId,
+        operation,
+        key,
+        payload,
+        session = null
+    }) {
+        if (!userId || !operation || !key) {
+            throw new IdempotencyError(
+                'User, operation and idempotency key are required.',
+                'IDEMPOTENCY_INPUT_REQUIRED'
+            );
+        }
+
+        if (
+            typeof key !== 'string' ||
+            key.length < 16 ||
+            key.length > 200
+        ) {
+            throw new IdempotencyError(
+                'The idempotency key must contain 16–200 characters.',
+                'INVALID_IDEMPOTENCY_KEY'
+            );
+        }
+
+        const normalizedUserId = String(userId);
+        const normalizedOperation = String(operation)
+            .trim()
+            .toLowerCase();
+
+        const requestHash = hashRequest(payload);
+
+        const identity = {
+            userId: normalizedUserId,
+            operation: normalizedOperation,
+            key
+        };
+
+        const options = session ? { session } : {};
+
+        try {
+            const [record] = await this.model.create(
+                [{
+                    ...identity,
+                    requestHash,
+                    status: 'processing',
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                }],
+                options
+            );
+
+            return {
+                created: true,
+                replay: false,
+                record
+            };
+        } catch (error) {
+            if (error.code !== 11000) {
+                throw error;
+            }
+        }
+
+        const existing = await this.model.findOne(
+            identity,
+            null,
+            options
+        ).lean();
+
+        if (!existing) {
+            throw new IdempotencyError(
+                'The previous request is being processed. Retry shortly.',
+                'IDEMPOTENCY_STATE_UNAVAILABLE'
+            );
+        }
+
+        if (existing.requestHash !== requestHash) {
+            throw new IdempotencyError(
+                'This idempotency key was already used for a different request.',
+                'IDEMPOTENCY_PAYLOAD_MISMATCH'
+            );
+        }
+
+        if (existing.status === 'completed') {
+            return {
+                created: false,
+                replay: true,
+                record: existing,
+                response: existing.response,
+                resourceType: existing.resourceType,
+                resourceId: existing.resourceId
+            };
+        }
+
+        if (existing.status === 'processing') {
+            throw new IdempotencyError(
+                'An identical request is already in progress.',
+                'IDEMPOTENCY_REQUEST_IN_PROGRESS'
+            );
+        }
+
+        if (existing.status === 'failed') {
+            throw new IdempotencyError(
+                'This request previously failed. Use the original transaction status or initiate a separately authorized retry.',
+                'IDEMPOTENCY_REQUEST_FAILED'
+            );
+        }
+
+        throw new IdempotencyError(
+            'The previous request has an unknown state.',
+            'IDEMPOTENCY_STATE_UNKNOWN'
+        );
+    }
+
+    async complete({
+        userId,
+        operation,
+        key,
+        response,
+        resourceType = null,
+        resourceId = null,
+        session = null
+    }) {
+        const options = session ? { session } : {};
+
+        const result = await this.model.updateOne(
+            {
+                userId: String(userId),
+                operation: String(operation).trim().toLowerCase(),
+                key,
+                status: 'processing'
+            },
+            {
+                $set: {
+                    status: 'completed',
+                    response,
+                    resourceType,
+                    resourceId: resourceId === null
+                        ? null
+                        : String(resourceId),
+                    updatedAt: new Date()
+                }
+            },
+            options
+        );
+
+        if (result.modifiedCount !== 1) {
+            throw new IdempotencyError(
+                'Unable to finalize the idempotency record.',
+                'IDEMPOTENCY_FINALIZATION_FAILED'
+            );
+        }
+
+        return true;
+    }
+
+    async fail({
+        userId,
+        operation,
+        key,
+        session = null
+    }) {
+        const options = session ? { session } : {};
+
+        const result = await this.model.updateOne(
+            {
+                userId: String(userId),
+                operation: String(operation).trim().toLowerCase(),
+                key,
+                status: 'processing'
+            },
+            {
+                $set: {
+                    status: 'failed',
+                    updatedAt: new Date()
+                }
+            },
+            options
+        );
+
+        return result.modifiedCount === 1;
+    }
+}
+
+module.exports = {
+    IdempotencyService,
+    IdempotencyRecord,
+    IdempotencyError,
+    hashRequest
+};
